@@ -9,6 +9,10 @@ class InvalidLink(Exception):
     pass
 
 
+class DisconnectedPipeline(Exception):
+    pass
+
+
 class PluginNode(Vertex):
     def __init__(self, plugin: Union[Plugin, ComputePlugin]):
         if not isinstance(plugin, (Plugin, ComputePlugin)):
@@ -45,3 +49,5 @@ class Pipeline(Graph):
         if not all(isinstance(x, Link) for x in E):
             raise ValueError("All edges must be of type Link")
         super().__init__(V, E, True)  # True for directed graph
+        if not self.connected():
+            raise DisconnectedPipeline("The pipeline must be connected")

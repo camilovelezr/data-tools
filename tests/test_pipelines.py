@@ -7,16 +7,30 @@ from polus_pipelines.pipelines import (
     Link,
     Pipeline,
     InvalidLink,
+    DisconnectedPipeline,
 )
 from polus.data import collections
+import polus.plugins as pp
 from polus.plugins import plugins
 from grandalf.graphs import Vertex, Edge
 
 
 class TestPipelines(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        if "OmeZarrConverter" not in plugins.list:
+            pp.submit_plugin(
+                "https://raw.githubusercontent.com/PolusAI/polus-plugins/master/formats/polus-ome-zarr-converter-plugin/plugin.json"
+            )
+        if "FeatureExtraction" not in plugins.list:
+            pp.submit_plugin(
+                "https://raw.githubusercontent.com/PolusAI/polus-plugins/master/features/polus-feature-extraction-plugin/plugin.json",
+                refresh=True,
+            )
+
     def test_plugin_node(self):
-        p1 = plugins.ApplyFlatfield
-        p2 = plugins.FeatureSubsetting
+        p1 = plugins.OmeZarrConverter
+        p2 = plugins.FeatureExtraction
         pln1 = PluginNode(p1)
         pln2 = PluginNode(p2)
         # ComputePlugin
@@ -105,8 +119,9 @@ class TestPipelines(unittest.TestCase):
         rand_par_nodes = random.choices(par_nodes, k=2)
         rand_plug_nodes = random.choices(plug_nodes, k=2)
         l1 = Link(rand_par_nodes[0], rand_plug_nodes[1])
-        l2 = Link(rand_par_nodes[1], rand_plug_nodes[0])
-        links = [l1, l2]  # Links
+        l2 = Link(rand_plug_nodes[1], rand_par_nodes[1])
+        l3 = Link(rand_par_nodes[1], rand_plug_nodes[0])
+        links = [l1, l2, l3]  # Links
         for link in links:
             self.assertIsInstance(link, Link)
         v1 = Vertex(random.randbytes(1))
@@ -123,9 +138,11 @@ class TestPipelines(unittest.TestCase):
         with self.assertRaises(ValueError):
             Pipeline(par_nodes, [e3])
         nodes = rand_par_nodes + rand_plug_nodes
-        pipe1 = Pipeline(nodes, [l1, l2])
+        pipe1 = Pipeline(nodes, links)
         pipelines = [pipe1]
         for pipeline in pipelines:
             self.assertIsInstance(pipeline, Pipeline)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(DisconnectedPipeline):
             Pipeline(nodes, [l2])  # not connected
+        with self.assertRaises(DisconnectedPipeline):
+            Pipeline(nodes, [l2, l1])  # not connected
