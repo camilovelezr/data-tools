@@ -11,7 +11,7 @@ with open("./polus_pipelines/_pipelines/VERSION", "r") as fh:
 package_data = ["_pipelines/VERSION"]
 
 setup(
-    name="polus-pipelines",
+    name="polus_pipelines",
     version=version,
     author="Camilo Velez",
     author_email="camilo.velez@axleinfo.com",
