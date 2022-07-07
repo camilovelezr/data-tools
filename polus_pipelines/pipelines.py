@@ -8,6 +8,17 @@ import fsspec
 from fsspec.implementations.local import LocalFileSystem
 from os import getcwd
 from tqdm import tqdm
+import logging
+
+"""
+Set up logging for the module
+"""
+logging.basicConfig(
+    format="%(asctime)s - %(name)-8s - %(levelname)-8s - %(message)s",
+    datefmt="%d-%b-%y %H:%M:%S",
+)
+logger = logging.getLogger("polus.pipelines")
+logger.setLevel(logging.INFO)
 
 
 class InvalidLink(Exception):
@@ -36,6 +47,10 @@ class ParameterNode(Vertex):
 
         super().__init__(parameter)
         self.uuid = uuid4()
+        logger.debug(
+            "Initialized ParameterNode with UUID %s and data %s"
+            % (self.uuid, self.data)
+        )
 
 
 class PluginNode(Vertex):
@@ -52,6 +67,10 @@ class PluginNode(Vertex):
         self.uuid = uuid4()
         self._links = {}
         self._vertices = {}
+        logger.debug(
+            "Initialized PluginNode with UUID %s and data %s"
+            % (self.uuid, self.data.name)
+        )
         if "outDir" in self._out:
             self.outDir = ParameterNode()
 
@@ -79,6 +98,7 @@ class PluginNode(Vertex):
                 self._links[__name] = Link(__value, self)
             else:
                 setattr(self.data, __name, __value)
+            logger.debug("Input attribute %s set to %s" % (__name, __value))
         elif hasattr(self, "_out") and __name in self._out:
             if isinstance(__value, Path):
                 v = ParameterNode(__value)
@@ -91,14 +111,11 @@ class PluginNode(Vertex):
                 self._links[__name] = Link(self, __value)
             else:
                 setattr(self.data, __name, __value)
-        # elif (
-        #     hasattr(self, "_in")
-        #     and hasattr(self, "_out")
-        #     and not (__name in self._in or __name in self._out)
-        # ):
-        #     raise InvalidIO("Invalid I/O parameter")
+            logger.debug("Output attribute %s set to %s" % (__name, __value))
         else:
-            return super().__setattr__(__name, __value)
+            super().__setattr__(__name, __value)
+            logger.debug("Node attribute %s set to %s" % (__name, __value))
+            return
 
 
 class Link(Edge):
@@ -159,7 +176,7 @@ class Pipeline(Graph):
                 )
             self.data_path = Path(data_path).joinpath(str(self.uuid))
 
-        # self._traverse(_cyclic=True)  # check if cyclic. Throw error if yes
+        self._check_cycles()  # check for cycles
 
     def __create_dirs(self):
         # create data_path dir
@@ -182,23 +199,49 @@ class Pipeline(Graph):
                     )  # set I/O values in plugin object LAST. NEEDED FOR FILESYSTEMS
 
     @property
-    def _starting(self):  # possible starting nodes
-        st = []
-        for node in self.C[0].sV:
-            if len(node.e_in()) == 0:
-                st.append(node)
-        return st
+    def links(self):
+        return self.E()
+
+    @property
+    def nodes(self):
+        return self.V()
+
+    @property
+    def leaves(self) -> list:
+        v = []
+        for node in [x.leaves() for x in self.C]:
+            v.extend(node)
+        return v
+
+    @property
+    def roots(self) -> list:
+        v = []
+        for node in [x.roots() for x in self.C]:
+            v.extend(node)
+            return v
+
+    def _check_cycles(self):
+        unvisited_links = list(self.links)
+        out_counts = {node: len(node.e_out()) for node in self.nodes}
+        while len(out_counts) > 0:
+            ln = [x for (x, y) in out_counts.items() if y == 0]
+            if len(ln) == 0:
+                raise CyclicPipeline("The Pipeline cannot contain any cycles.")
+            for node in ln:
+                for ilink in filter(lambda x: x in unvisited_links, node.e_in()):
+                    nt = list(filter(lambda x: x != node, ilink.v))[0]  # tail node
+                    out_counts[nt] -= 1
+                    unvisited_links.remove(ilink)
+                out_counts.pop(node)
 
     def _traverse(
         self,
         start: Optional[Union[ParameterNode, PluginNode]] = None,
         _plugins: bool = False,
-        _cyclic: bool = False,
     ):
-        if not start and len(self._starting) == 1:
-            start = self._starting[0]
-        assert start in self._starting, "Invalid starting node"
-        # order = self.order()
+        if not start and len(self.roots) == 1:
+            start = self.roots[0]
+        assert start in self.roots, "Invalid starting node"
         visited = []
         frontier = [start]
         while len(frontier) > 0:
@@ -208,17 +251,6 @@ class Pipeline(Graph):
                 for n in v.N(1)  # outward neighbors of V
                 if not ((n in visited) or (n in frontier))
             ]
-            # else:
-            #     new_frontier = [
-            #         n for v in frontier for n in v.N(1)  # outward neighbors of V
-            #     ]
-            #     if any(
-            #         [
-            #             v in filter(lambda q: isinstance(q, PluginNode), visited)
-            #             for v in new_frontier
-            #         ]
-            #     ):
-            #         raise CyclicPipeline("The pipeline cannot contain cycles")
             visited.extend(frontier)
             frontier = new_frontier
         if _plugins:
