@@ -4,7 +4,7 @@ from tkinter import W
 from polus.plugins import load_config
 from grandalf.graphs import Edge, graph_core
 from grandalf.layouts import SugiyamaLayout
-from typing import Generator, Union, Optional, Type, Any
+from typing import Generator, Tuple, Union, Optional, Type, Any
 from pathlib import Path
 from uuid import UUID, uuid4
 import fsspec
@@ -12,6 +12,7 @@ from fsspec.implementations.local import LocalFileSystem
 from os import getcwd
 from tqdm import tqdm
 import logging
+from itertools import combinations
 from ._pipelines._nodes import ParameterNode, PluginNode, Link, find_shared
 from ._pipelines._config_model import PipelineConfig
 from ._pipelines._utils import _filter
@@ -182,6 +183,20 @@ class Pipeline(graph_core):
         return config
 
     @property
+    def _shared_nodes(self):
+        plugin_nodes = combinations(self._traverse(plugins=True), 2)
+        d = {}
+        for nodes in plugin_nodes:
+            shared = find_shared(nodes)
+            if len(shared) > 0:
+                d[str(nodes[0].uuid)] = {
+                    "in": shared[0][0],
+                    "out": shared[0][1],
+                    "parameter": shared[1],
+                }
+        return d
+
+    @property
     def config(self):
         return PipelineConfig(**{"nodes": self._config["nodes"]})
 
@@ -192,6 +207,15 @@ class Pipeline(graph_core):
         elif not isinstance(config, PipelineConfig):
             raise TypeError("config must be one of PipelineConfig or Path")
         return config
+
+    def set_parnodes(plugins: Tuple[PluginNode, PluginNode]) -> None:
+        """Sets shared `ParameterNodes` to the same value.
+        Used for loading a config workflow
+        """
+        shared = find_shared(plugins)
+        for plnodes, parnode in shared:
+            setattr(plugins[1], plnodes[1], getattr(plugins[0], plnodes[0]))
+        return
 
     @classmethod
     def load_config(cls, config: Union[PipelineConfig, dict, Path]):

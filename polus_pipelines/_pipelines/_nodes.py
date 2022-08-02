@@ -1,5 +1,5 @@
 from uuid import UUID, uuid4
-from typing import Union, Optional, Any
+from typing import Union, Optional, Any, Tuple
 from pathlib import Path
 from grandalf.graphs import Vertex, Edge
 
@@ -123,7 +123,9 @@ class PluginNode(Node):
         # create epic to create unittest for plugins and pipelinese
 
 
-def find_shared(tuple):
+def find_shared(
+    tuple: Tuple[PluginNode, PluginNode]
+) -> Tuple[Tuple[str, str], ParameterNode]:
     """Find shared ParameterNodes between a pair of PluginNodes.
 
     Assumes that `itertools.combinations()` will give a list containing tuples
@@ -133,7 +135,7 @@ def find_shared(tuple):
     base_dict = {v: [k] for (k, v) in tuple[0]._vertices.items()}
     for kv in tuple[1]._vertices.items():
         _add_to_dict(base_dict, kv)
-    return [(v, k.data) for (k, v) in base_dict.items() if len(v) > 1]
+    return [(v, k) for (k, v) in base_dict.items() if len(v) > 1][0]
 
 
 class InvalidLink(Exception):
