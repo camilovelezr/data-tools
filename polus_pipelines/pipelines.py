@@ -13,8 +13,8 @@ from os import getcwd
 from tqdm import tqdm
 import logging
 from itertools import combinations
-from ._pipelines._nodes import ParameterNode, PluginNode, Link, find_shared
-from ._pipelines._config_model import PipelineConfig
+from ._pipelines._nodes import ParameterNode, PluginNode, Link, set_parameter_nodes
+from ._pipelines._config_model import PipelineConfig, create_parameter_nodes
 from ._pipelines._utils import _filter
 
 """
@@ -137,6 +137,7 @@ class Pipeline(graph_core):
     def _make_dirs(self) -> None:
         """Creates dir structure and sets I/O values in PluginNodes"""
         if not self.__mkdirdone:
+            logger.debug("Making DIRS")
             # create data_path dir
             if not self._fs.exists(str(self.data_path)):
                 self._fs.mkdir(str(self.data_path))
@@ -147,11 +148,13 @@ class Pipeline(graph_core):
 
             for x in _filter(PluginNode, self.nodes):
                 x.data._fs = self._fs  # set filesystem in Plugin object
+                logger.debug(f"x is {x} and x._vertices is {x._vertices}")
                 for k, v in x._vertices.items():
-                    if v.data is None:  # Empty ParameterNodes (outDir...)
+                    if v.is_empty():  # Empty ParameterNodes (outDir...)
                         v.data = self.data_path.joinpath(
-                            str(x.uuid)
+                            str(v.uuid)
                         )  # create dir with uuid of parnode
+                        logger.debug("%s is empty, k=%s, uuid=%s" % (v, k, v.uuid))
                         setattr(x.data, k, v.data)  # set I/O value now that dir exists
                     else:
                         setattr(
@@ -179,22 +182,24 @@ class Pipeline(graph_core):
         self._make_dirs()
         config = {}
         config["nodes"] = list(self.nodes)
-        config["links"] = list(self.links)
         return config
 
-    @property
-    def _shared_nodes(self):
-        plugin_nodes = combinations(self._traverse(plugins=True), 2)
-        d = {}
-        for nodes in plugin_nodes:
-            shared = find_shared(nodes)
-            if len(shared) > 0:
-                d[str(nodes[0].uuid)] = {
-                    "in": shared[0][0],
-                    "out": shared[0][1],
-                    "parameter": shared[1],
-                }
-        return d
+    # @property
+    # def _shared_nodes(self):
+    #     plugin_nodes = combinations(self._traverse(plugins=True), 2)
+    #     d = {}
+    #     for nodes in plugin_nodes:  # nodes = [PluginNode, PluginNode]
+    #         shared = find_shared(nodes)
+    #         if len(shared) > 0:
+    #             d[nodes] = [
+    #                 {  # uuid of first PluginNode
+    #                     "x": t[0][0],  # attr name of first PluginNode
+    #                     "y": t[0][1],  # attr name of second PluginNode
+    #                     "data": t[1].get_data(),  # ParameterNode
+    #                 }
+    #                 for t in shared
+    #             ]
+    # return d
 
     @property
     def config(self):
@@ -208,19 +213,22 @@ class Pipeline(graph_core):
             raise TypeError("config must be one of PipelineConfig or Path")
         return config
 
-    def set_parnodes(plugins: Tuple[PluginNode, PluginNode]) -> None:
-        """Sets shared `ParameterNodes` to the same value.
-        Used for loading a config workflow
-        """
-        shared = find_shared(plugins)
-        for plnodes, parnode in shared:
-            setattr(plugins[1], plnodes[1], getattr(plugins[0], plnodes[0]))
-        return
+    # def set_parnodes(plugins: Tuple[PluginNode, PluginNode]) -> None:
+    #     """Sets shared `ParameterNodes` to the same value.
+    #     Used for loading a config workflow
+    #     """
+    #     shared = find_shared(plugins)
+    #     for plnodes, parnode in shared:
+    #         setattr(plugins[1], plnodes[1], getattr(plugins[0], plnodes[0]))
+    #     return
 
     @classmethod
-    def load_config(cls, config: Union[PipelineConfig, dict, Path]):
+    def load_config(cls, config: Union[PipelineConfig, Path]):
         config = cls.__parse_config(config)
         plugin_nodes = [PluginNode.load_config(model) for model in config.nodes]
+        # pluginnodes ready without parameternodes
+        parameter_nodes = create_parameter_nodes(config.nodes)
+        set_parameter_nodes(plugin_nodes, parameter_nodes)
         return plugin_nodes
 
     @property
