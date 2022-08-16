@@ -1,4 +1,5 @@
 # from __future__ import absolute_import
+# from functools import singledispatch
 import json
 from tkinter import W
 from polus.plugins import load_config
@@ -184,23 +185,6 @@ class Pipeline(graph_core):
         config["nodes"] = list(self.nodes)
         return config
 
-    # @property
-    # def _shared_nodes(self):
-    #     plugin_nodes = combinations(self._traverse(plugins=True), 2)
-    #     d = {}
-    #     for nodes in plugin_nodes:  # nodes = [PluginNode, PluginNode]
-    #         shared = find_shared(nodes)
-    #         if len(shared) > 0:
-    #             d[nodes] = [
-    #                 {  # uuid of first PluginNode
-    #                     "x": t[0][0],  # attr name of first PluginNode
-    #                     "y": t[0][1],  # attr name of second PluginNode
-    #                     "data": t[1].get_data(),  # ParameterNode
-    #                 }
-    #                 for t in shared
-    #             ]
-    # return d
-
     @property
     def config(self):
         return PipelineConfig(**{"nodes": self._config["nodes"]})
@@ -213,14 +197,19 @@ class Pipeline(graph_core):
             raise TypeError("config must be one of PipelineConfig or Path")
         return config
 
-    # def set_parnodes(plugins: Tuple[PluginNode, PluginNode]) -> None:
-    #     """Sets shared `ParameterNodes` to the same value.
-    #     Used for loading a config workflow
-    #     """
-    #     shared = find_shared(plugins)
-    #     for plnodes, parnode in shared:
-    #         setattr(plugins[1], plnodes[1], getattr(plugins[0], plnodes[0]))
-    #     return
+    # @singledispatch
+    # def __parse_config(config):
+    #     raise TypeError("config must be one of PipelineConfig or Path")
+
+    # @__parse_config.register
+    # def _(config: Path):
+    #     with open(config, "r") as file:
+    #         config = PipelineConfig(json.load(file))
+    #     return config
+
+    # @__parse_config.register
+    # def _(config: PipelineConfig):
+    #     return config
 
     @classmethod
     def load_config(cls, config: Union[PipelineConfig, Path]):
@@ -229,7 +218,7 @@ class Pipeline(graph_core):
         # pluginnodes ready without parameternodes
         parameter_nodes = create_parameter_nodes(config.nodes)
         set_parameter_nodes(plugin_nodes, parameter_nodes)
-        return plugin_nodes
+        return cls(plugin_nodes)
 
     @property
     def SugiyamaLayout(self):
